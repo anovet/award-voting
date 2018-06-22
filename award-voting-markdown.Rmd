@@ -12,24 +12,77 @@ require(janitor)
 require(tidyverse)
 ```
 
+To start, scrape the main awards data from each year's page on Hockey Reference
 
 ```{r scrape hockeydb}
 
+year <- 2017
+url <- read_html(paste0("https://www.hockey-reference.com/awards/voting-", year, ".html"))
+
+  
+
+years <- c(2006:2017)
+awards <- c("selke", "norris", "vezina", "byng")
+dat1 <- data.frame()
+for (j in awards){
+  for (i in years){
+    url <- read_html(paste0("https://www.hockey-reference.com/awards/voting-", i, ".html"))
+  
+    temp <- url %>% 
+      html_nodes(xpath = '//comment()') %>%    # select comment nodes
+      html_text() %>%    # extract comment text
+      paste(collapse = '') %>%    # collapse to a single string
+      read_html() %>%    # reparse to HTML
+      html_node(paste0('table#',j,'_stats')) %>%    # select the desired table
+      html_table() %>%
+      mutate(year = i, award = j)
+    dat1 <- bind_rows(dat1, temp)
+  }
+}
+
+```
+
+The calder table has 2 header rows, which throws things off. This could be done more efficient, but it's easiest to redo the pull with just the Calder and then clean it up
+
+```{r calder}
+calder <- data.frame()
+for (i in years){
+  url <- read_html(paste0("https://www.hockey-reference.com/awards/voting-", i, ".html"))
+
+  temp <- url %>% 
+    html_nodes(xpath = '//comment()') %>%    # select comment nodes
+    html_text() %>%    # extract comment text
+    paste(collapse = '') %>%    # collapse to a single string
+    read_html() %>%    # reparse to HTML
+    html_node("table#calder_stats") %>%    # select the desired table
+    html_table()
+  colnames(temp) <- temp[1,]
+  temp <- tail(temp,-1)
+  calder <- bind_rows(calder, temp)
+}
+
+char <- select(calder, Player, Tm, Pos)
+num <- select(calder, -Player, -Tm, -Pos) %>%mutate_all(as.numeric)
+calder2 <- cbind(char, num)
+
+dat2 <- bind_rows(dat1, calder2)
+```
+
+Also need a separate pull for Hart becuase that table is saved differently on the web page
+
+
+```{r hart}
+
 url <- "https://www.hockey-reference.com/awards/voting-2017.html"
 
-#pull <- url %>% 
-#  read_html() %>%
-#  html_nodes(xpath = "//*[@id=\"hart_stats\"]/tbody") %>%
-#  html_table()
+pull <- url %>% 
+  read_html() %>%
+  html_nodes(xpath = "//*[@id=\"hart_stats\"]/tbody") %>%
+  html_table()
 
 hart_scrape <- url %>% read_html() %>% html_table(fill = TRUE)
 hart_dat <- hart_scrape[[1]]
 colnames(hart_dat) <- hart_dat[1,] 
 hart <- tail(hart_dat, -1) %>% clean_names()
-
-#None of these work
-byng_scrape <- url %>% read_html() %>% html_nodes(xpath = "//*[@id=\"byng_stats\"]") %>% html_table(fill = TRUE)
-vezina_scrape <- url %>% read_html() %>% html_nodes("#vezina_stats .center , #vezina_stats .left , #vezina_stats .right") %>% html_table(fill = TRUE)
-vezina_scrape <- url %>% read_html() %>% html_nodes(".vezina_stats") %>% html_nodes(".left") %>% html_table(fill = TRUE)
 
 ```
