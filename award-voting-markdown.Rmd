@@ -9,6 +9,7 @@ output: github_document
 knitr::opts_chunk$set(echo = TRUE)
 require(rvest)
 require(janitor)
+require(ggthemes)
 require(tidyverse)
 ```
 
@@ -16,12 +17,12 @@ To start, scrape the main awards data from each year's page on Hockey Reference
 
 ```{r scrape hockeydb}
 
-year <- 2017
-url <- read_html(paste0("https://www.hockey-reference.com/awards/voting-", year, ".html"))
+#year <- 2017
+#url <- read_html(paste0("https://www.hockey-reference.com/awards/voting-", year, ".html"))
 
   
 
-years <- c(2006:2017)
+years <- c(2007:2017)
 awards <- c("selke", "norris", "vezina", "byng")
 dat1 <- data.frame()
 for (j in awards){
@@ -57,32 +58,84 @@ for (i in years){
     html_node("table#calder_stats") %>%    # select the desired table
     html_table()
   colnames(temp) <- temp[1,]
-  temp <- tail(temp,-1)
+  temp <- tail(temp,-1) %>% mutate(year = i, award = "calder")
   calder <- bind_rows(calder, temp)
 }
 
-char <- select(calder, Player, Tm, Pos)
-num <- select(calder, -Player, -Tm, -Pos) %>%mutate_all(as.numeric)
+char <- select(calder, Player, Tm, Pos, award)
+num <- select(calder, -Player, -Tm, -Pos, -award) %>% mutate_all(as.numeric)
 calder2 <- cbind(char, num)
 
-dat2 <- bind_rows(dat1, calder2)
 ```
 
 Also need a separate pull for Hart becuase that table is saved differently on the web page
 
 
 ```{r hart}
+hart <- data.frame()
+for (i in years){
+  url <- paste0("https://www.hockey-reference.com/awards/voting-", i, ".html")
+  temp <- url %>% read_html() %>% html_table(fill = TRUE)
+  temp <- temp[[1]]
+  colnames(temp) <- temp[1,] 
+  temp <- tail(temp, -1) %>% mutate(year = i, award = "hart")
+  hart <- bind_rows(hart, temp)
+}
 
-url <- "https://www.hockey-reference.com/awards/voting-2017.html"
-
-pull <- url %>% 
-  read_html() %>%
-  html_nodes(xpath = "//*[@id=\"hart_stats\"]/tbody") %>%
-  html_table()
-
-hart_scrape <- url %>% read_html() %>% html_table(fill = TRUE)
-hart_dat <- hart_scrape[[1]]
-colnames(hart_dat) <- hart_dat[1,] 
-hart <- tail(hart_dat, -1) %>% clean_names()
+char <- select(hart, Player, Tm, Pos, award)
+num <- select(hart, -Player, -Tm, -Pos, -award) %>% mutate_all(as.numeric)
+hart2 <- cbind(char, num)
 
 ```
+
+Now we just need to combine the datasets and then we can start pulling stats. There's lots of different ways to measure voting behavior, most of which involve some pretty arbitrary cuts. I think ones I'm particularly interested in are:
+
+1. Number of people receiving any votes for the award (regardless of whether they were first, second, etc.)
+2. Players with 5 or fewer votes
+
+```{r clean}
+
+
+dat2 <- bind_rows(dat1, calder2) %>% bind_rows(hart2) %>% clean_names() %>%
+  mutate(x4th = ifelse(is.na(x4th), 0, x4th),
+         x5th = ifelse(is.na(x5th), 0, x5th)) #Replace NAs in Vezina voting
+save(dat2, file = "Award Voting Annual Data.Rds")
+
+
+stats <- group_by(dat2, award, year) %>%
+  summarise(total_players = n(),
+            few_votes = sum((x1st +x2nd + x3rd +x4th +x5th) <= 5))
+
+new <- data.frame(award = c("hart", "norris", "vezina", "calder", "selke", "byng"),
+                  year = 2018,
+                  total_players = c(20,18,10,12,31,56),
+                  few_votes = c(10,7,6,2,21,36))
+stats <- bind_rows(stats, new)
+
+```
+
+
+```{r viz}
+
+ggplot(stats, aes(x = year, y = total_players, group = award)) + 
+  geom_line(aes(color = award), size = 1.5) + geom_vline(xintercept = 2017) +
+  labs(title = "Players Receiving an Award Vote", x = "Year", y = "Number of Players") +
+  theme_few()
+
+ggplot(filter(stats, year != 2014), aes(x = year, y = total_players, group = award)) + 
+  geom_line(aes(color = award), size = 1.5) + geom_vline(xintercept = 2017) +
+  labs(title = "Players Receiving an Award Vote", x = "Year", y = "Number of Players") +
+  theme_few()
+  
+ggplot(stats, aes(x = year, y = few_votes, group = award)) + 
+  geom_line(aes(color = award), size = 1.5) + geom_vline(xintercept = 2017) +
+  labs(title = "Players Receiving 5 or Fewer Award Votes", x = "Year", y = "Number of Players") +
+  theme_few()
+
+ggplot(filter(stats, year != 2014), aes(x = year, y = few_votes, group = award)) + 
+  geom_line(aes(color = award), size = 1.5) + geom_vline(xintercept = 2017) +
+  labs(title = "Players Receiving 5 or Fewer Award Votes", x = "Year", y = "Number of Players") +
+  theme_few()
+```
+
+Thanks to hockey-reference for the data. Note that this doesn't take into consideration changes in the # of total voters
