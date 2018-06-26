@@ -1,7 +1,7 @@
 ---
 title: "Award Voting Behavior"
 author: "Alex Novet"
-date: "April 28, 2018"
+date: "June 24, 2018"
 output: github_document
 ---
 
@@ -11,20 +11,18 @@ require(rvest)
 require(janitor)
 require(ggthemes)
 require(tidyverse)
+load("Award Voting Annual Data.Rds")
 ```
 
-To start, scrape the main awards data from each year's page on Hockey Reference
+To start, scrape the main awards data from each year's page on Hockey Reference. They have some weird formatting where the data is in comments, but the below code gets results for 4 of the 6 awards
 
 ```{r scrape hockeydb}
-
-#year <- 2017
-#url <- read_html(paste0("https://www.hockey-reference.com/awards/voting-", year, ".html"))
-
-  
-
+#Set years, awards, and empty dataframe for results
 years <- c(2007:2017)
 awards <- c("selke", "norris", "vezina", "byng")
 dat1 <- data.frame()
+
+#Loop on awards and years to get data, then combine
 for (j in awards){
   for (i in years){
     url <- read_html(paste0("https://www.hockey-reference.com/awards/voting-", i, ".html"))
@@ -70,7 +68,6 @@ calder2 <- cbind(char, num)
 
 Also need a separate pull for Hart becuase that table is saved differently on the web page
 
-
 ```{r hart}
 hart <- data.frame()
 for (i in years){
@@ -95,7 +92,6 @@ Now we just need to combine the datasets and then we can start pulling stats. Th
 
 ```{r clean}
 
-
 dat2 <- bind_rows(dat1, calder2) %>% bind_rows(hart2) %>% clean_names() %>%
   mutate(x4th = ifelse(is.na(x4th), 0, x4th),
          x5th = ifelse(is.na(x5th), 0, x5th)) #Replace NAs in Vezina voting
@@ -106,6 +102,7 @@ stats <- group_by(dat2, award, year) %>%
   summarise(total_players = n(),
             few_votes = sum((x1st +x2nd + x3rd +x4th +x5th) <= 5))
 
+#Manually input 2018 data because it is not yet on Hockey Reference
 new <- data.frame(award = c("hart", "norris", "vezina", "calder", "selke", "byng"),
                   year = 2018,
                   total_players = c(20,18,10,12,31,56),
@@ -117,25 +114,18 @@ stats <- bind_rows(stats, new)
 
 ```{r viz}
 
-ggplot(stats, aes(x = year, y = total_players, group = award)) + 
-  geom_line(aes(color = award), size = 1.5) + geom_vline(xintercept = 2017) +
-  labs(title = "Players Receiving an Award Vote", x = "Year", y = "Number of Players") +
-  theme_few()
-
-ggplot(filter(stats, year != 2014), aes(x = year, y = total_players, group = award)) + 
-  geom_line(aes(color = award), size = 1.5) + geom_vline(xintercept = 2017) +
+ggplot(stats, aes(x = year, y = total_players, group = award)) +  
+  geom_point(aes(color = award), size = 3) +
+  geom_line(aes(color = award), size = 1.5) + 
   labs(title = "Players Receiving an Award Vote", x = "Year", y = "Number of Players") +
   theme_few()
   
 ggplot(stats, aes(x = year, y = few_votes, group = award)) + 
-  geom_line(aes(color = award), size = 1.5) + geom_vline(xintercept = 2017) +
-  labs(title = "Players Receiving 5 or Fewer Award Votes", x = "Year", y = "Number of Players") +
+  geom_point(aes(color = award), size = 3) +
+  geom_line(aes(color = award), size = 1.5) + 
+  labs(title = "Players Receiving Votes on 5 or Fewer Ballots", x = "Year", y = "Number of Players") +
   theme_few()
 
-ggplot(filter(stats, year != 2014), aes(x = year, y = few_votes, group = award)) + 
-  geom_line(aes(color = award), size = 1.5) + geom_vline(xintercept = 2017) +
-  labs(title = "Players Receiving 5 or Fewer Award Votes", x = "Year", y = "Number of Players") +
-  theme_few()
 ```
 
 Thanks to hockey-reference for the data. Note that this doesn't take into consideration changes in the # of total voters
